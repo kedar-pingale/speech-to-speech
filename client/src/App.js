@@ -1,98 +1,59 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import React from "react";
+import { useSelector, useDispatch } from "react-redux";
+
 import "../node_modules/bootstrap/dist/css/bootstrap.min.css";
-import { transcribe, translateText, synthesizeSpeech } from "./api";
+import CardWithTextarea from "./CardWithTextarea";
+import setFile from "./actions/setFile";
+import setTargetLanguage from "./actions/setTargetLanguage";
+import setAudioOutput from "./actions/setAudioOutput";
+import setDisableButtons from "./actions/setDisableButtons";
 
-function App() {
-    const [file, setFile] = useState();
-    const [inputToMT, setinputToMT] = useState("");
-    const [inputToTTS, setinputToTTS] = useState("");
-    const [targetLanguage, setTargetLanguage] = useState("Hindi");
-    const [audioObj, setAudioObj] = useState();
+export default function App() {
+    let reduxTargetLanguage = useSelector(
+        state => state.targetLanguageReducer.targetLanguage
+    );
+    let Input = useSelector(state => state.translationReducer);
+    let audio = useSelector(state => state.fileReducer.file);
+    let outputAudio = useSelector(
+        state => state.audioOutputReducer.outputAudio
+    );
 
-    let targetLanguageRef = useRef();
+    const dispatch = useDispatch();
+
+    function disableButtons() {
+        document.getElementById("runASR").disabled = true;
+        document.getElementById("runMT").disabled = true;
+        document.getElementById("runTTS").disabled = true;
+        document.getElementById("playAudio").disabled = true;
+    }
+
+    dispatch(setDisableButtons(disableButtons));
 
     //this useEffect initially disables all buttons
     useEffect(() => {
-        document.getElementById("runASR").disabled = true;
-        document.getElementById("runMT").disabled = true;
-        document.getElementById("runTTS").disabled = true;
-        document.getElementById("playAudio").disabled = true;
+        disableButtons();
     }, []);
 
-    //to show transcribed text
-    useEffect(() => {
-        document.getElementById("transcriptedTextArea").innerText = inputToMT;
-    }, [inputToMT]);
-
-    //to show translated text
-    useEffect(() => {
-        document.getElementById("translatedTextArea").innerText = inputToTTS;
-    }, [inputToTTS]);
-
-    async function handleRunASR(e) {
-        document.getElementById("runASR").disabled = true;
-        document.getElementById("runMT").disabled = true;
-        document.getElementById("runTTS").disabled = true;
-        document.getElementById("playAudio").disabled = true;
-        setinputToMT("");
-        setinputToMT("");
-
-        let result;
-        result = await transcribe(file);
-
-        setinputToMT(result.text);
+    if (audio && document.getElementById("runASR"))
         document.getElementById("runASR").disabled = false;
+
+    if (Input.mtInput != "" && document.getElementById("runMT"))
         document.getElementById("runMT").disabled = false;
-    }
 
-    async function handleRunMT() {
-        document.getElementById("runMT").disabled = true;
-        document.getElementById("runTTS").disabled = true;
-        document.getElementById("playAudio").disabled = true;
-        setinputToTTS("");
-
-        const result = await translateText(inputToMT, targetLanguage);
-
-        setinputToTTS(result.translatedText);
-        document.getElementById("runMT").disabled = false;
+    if (Input.ttsInput != "" && document.getElementById("runTTS"))
         document.getElementById("runTTS").disabled = false;
+
+    function handleRunTTS() {
+        disableButtons();
+        dispatch(setAudioOutput(Input.ttsInput, reduxTargetLanguage));
+        alert("Now you can play output audio!");
+        document.getElementById("runTTS").disabled = false;
+        document.getElementById("playAudio").disabled = false;
     }
 
-    async function handleRunTTS() {
-        try {
-            document.getElementById("runTTS").disabled = true;
-            document.getElementById("playAudio").disabled = true;
-            let result;
-            result = await synthesizeSpeech(inputToTTS, targetLanguage);
-
-            let url = URL.createObjectURL(result);
-            let audio1 = new Audio(url);
-            audio1.load();
-
-            setAudioObj(audio1);
-
-            alert("Now you can play output audio!");
-            document.getElementById("runTTS").disabled = false;
-            document.getElementById("playAudio").disabled = false;
-        } catch (err) {
-            console.log("Error in app.js is", err);
-        }
-    }
-
-    async function handlePlayAudio(e) {
-        await audioObj.play();
-    }
-
-    //sets the file to state variable after selection
-    function setTheFile(e) {
-        setFile(e.target.files[0]);
-        document.getElementById("runASR").disabled = false;
-    }
-
-    //sets the language option to state variable after selection
-    function setTargetLang(e) {
-        setTargetLanguage(targetLanguageRef.current.value);
+    function handlePlayAudio(e) {
+        outputAudio.play();
     }
 
     return (
@@ -101,13 +62,12 @@ function App() {
             style={{ margin: "0 10%" }}
         >
             <div className="row mt-5">
-                <div className="mt-2 mr-4 ml-5" style={{ width: "50%" }}>
+                <div className="mt-2 mr-4 ml-5">
                     <input
                         type="file"
-                        // ref={inputFileRef}
                         name="inputFile"
                         className="form-control-file mr-2"
-                        onChange={e => setTheFile(e)}
+                        onChange={e => dispatch(setFile(e.target.files[0]))}
                     />
                 </div>
 
@@ -115,8 +75,7 @@ function App() {
                     name="targetLanguage"
                     className="form-select d-inline-block mt-2 mx-auto"
                     id="targetLanguage"
-                    ref={targetLanguageRef}
-                    onChange={e => setTargetLang(e)}
+                    onChange={e => dispatch(setTargetLanguage(e.target.value))}
                 >
                     <option value="Hindi">Hindi</option>
                     <option value="German">German</option>
@@ -124,49 +83,9 @@ function App() {
             </div>
 
             <div className="row">
-                <div
-                    className="card mt-5 mx-2 border border-dark"
-                    style={{ width: "30%" }}
-                >
-                    <h5 className="mx-auto">ASR</h5>
-                    <input
-                        type="button"
-                        id="runASR"
-                        className="btn btn-primary border border-white w-50 mx-auto"
-                        value="Run ASR"
-                        onClick={e => handleRunASR(e)}
-                    />
-                    <textarea
-                        id="transcriptedTextArea"
-                        className="form-control"
-                        rows="5"
-                        cols="60"
-                        style={{ resize: "none" }}
-                        readOnly
-                    ></textarea>
-                </div>
+                <CardWithTextarea id="ASR" />
 
-                <div
-                    className="card mt-5 mx-2 border border-dark"
-                    style={{ width: "30%" }}
-                >
-                    <h5 className="mx-auto">MT</h5>
-                    <input
-                        type="button"
-                        id="runMT"
-                        className="btn btn-primary border border-white w-50 mx-auto"
-                        value="Run MT"
-                        onClick={e => handleRunMT(e)}
-                    />
-                    <textarea
-                        id="translatedTextArea"
-                        className="form-control"
-                        rows="5"
-                        cols="60"
-                        style={{ resize: "none" }}
-                        readOnly
-                    ></textarea>
-                </div>
+                <CardWithTextarea id="MT" />
 
                 <div
                     className="card mt-5 mx-2 border border-dark"
@@ -178,12 +97,12 @@ function App() {
                         id="runTTS"
                         value="Run TTS"
                         className="btn btn-primary border border-white w-50 mx-auto"
-                        onClick={e => handleRunTTS(e)}
+                        onClick={() => handleRunTTS()}
                     />
                     <input
                         type="button"
                         id="playAudio"
-                        value="play Output Audio"
+                        value="Play Output Audio"
                         className="btn btn-primary border border-white w-50 mt-5 mx-auto"
                         onClick={e => handlePlayAudio(e)}
                     />
@@ -192,5 +111,3 @@ function App() {
         </div>
     );
 }
-
-export default App;

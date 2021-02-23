@@ -16,65 +16,74 @@ const voices = {
     German: "Hans",
 };
 
-router.post("/transcribe", async (req, res) => {
-    let inputToMachineTranslation;
-    const file = req.files.audio;
+router.post("/transcribe", (req, res) => {
+    try {
+        let inputToMachineTranslation;
 
-    //Logic to upload file to S3 bucket
-    const s3 = new AWS.S3();
-    const params = {
-        Bucket: "audio-to-audio",
-        Key: "sampleForTranscribe.mp3",
-        Body: file.data,
-    };
-    await s3.putObject(params, (err, data) => {
-        if (err) console.log("Error in s3 upload is", err);
-    });
+        const file = req.files.audio;
 
-    //Logic to get transcription of given audio
-    const Transcribe = new AWS.TranscribeService({ region: "ap-south-1" });
+        //Logic to upload file to S3 bucket
+        const s3 = new AWS.S3();
+        const params = {
+            Bucket: "audio-to-audio",
+            Key: "sampleForTranscribe.mp3",
+            Body: file.data,
+        };
+        s3.putObject(params, err => {
+            if (err) console.log("Error in s3 upload is", err);
+        });
 
-    const transcribeParams = {
-        LanguageCode: "en-US",
-        Media: {
-            MediaFileUri: "s3://audio-to-audio/sampleForTranscribe.mp3",
-        },
-        TranscriptionJobName: "sampletranscription",
-    };
+        //Logic to get transcription of given audio
+        const Transcribe = new AWS.TranscribeService({ region: "ap-south-1" });
 
-    await Transcribe.startTranscriptionJob(transcribeParams, (err, data) => {
-        if (err) console.log("Error in transcribe is", err);
-    });
+        const transcribeParams = {
+            LanguageCode: "en-US",
+            Media: {
+                MediaFileUri: "s3://audio-to-audio/sampleForTranscribe.mp3",
+            },
+            TranscriptionJobName: "sampletranscription",
+        };
 
-    //This interval is set to check if transcription job is completed
-    const handle = setInterval(async () => {
-        await Transcribe.getTranscriptionJob(
-            { TranscriptionJobName: "sampletranscription" },
-            (err, data) => {
-                if (err) console.log("Error in getTranscriptionJob is", err);
-                else {
-                    //following is the actual condition
-                    if (
-                        data.TranscriptionJob.TranscriptionJobStatus ==
-                        "COMPLETED"
-                    ) {
-                        clearInterval(handle);
+        Transcribe.startTranscriptionJob(transcribeParams, err => {
+            if (err) console.log("Error in transcribe is", err);
+        });
 
-                        //a function is executed immediately after 200 milliseconds of acknowledgement to get transcription, to delete transcription job and to send response back
-                        setTimeout(() => {
-                            https.get(
-                                data.TranscriptionJob.Transcript
-                                    .TranscriptFileUri,
-                                function (response) {
-                                    streamToString(response)
-                                        .then(async data => {
+        //This interval is set to check if transcription job is completed
+        let completeFlag = false;
+        const handle = setInterval(() => {
+            Transcribe.getTranscriptionJob(
+                { TranscriptionJobName: "sampletranscription" },
+                (err, data) => {
+                    if (err)
+                        console.log("Error in getTranscriptionJob is", err);
+                    else {
+                        //following is the actual condition
+                        if (
+                            data.TranscriptionJob.TranscriptionJobStatus ==
+                                "COMPLETED" &&
+                            completeFlag == false
+                        ) {
+                            completeFlag = true;
+
+                            clearInterval(handle);
+
+                            //a function is executed after 500 milliseconds of completion of job to get transcription, to delete transcription job and to send response back
+                            setTimeout(() => {
+                                https.get(
+                                    data.TranscriptionJob.Transcript
+                                        .TranscriptFileUri,
+                                    async response => {
+                                        try {
+                                            const data = await streamToString(
+                                                response
+                                            );
                                             const dataObject = JSON.parse(data);
 
                                             inputToMachineTranslation =
                                                 dataObject.results
                                                     .transcripts[0].transcript;
 
-                                            await Transcribe.deleteTranscriptionJob(
+                                            Transcribe.deleteTranscriptionJob(
                                                 {
                                                     TranscriptionJobName:
                                                         "sampletranscription",
@@ -91,27 +100,30 @@ router.post("/transcribe", async (req, res) => {
                                                         });
                                                 }
                                             );
-                                        })
-                                        .catch(err => {
+                                        } catch (err) {
                                             console.log(
                                                 "Error while getting data from ReadStream of transcription is",
                                                 err
                                             );
-                                        });
-                                }
+                                        }
+                                    }
+                                );
+                            }, 500);
+                        } else if (
+                            data.TranscriptionJob.TranscriptionJobStatus ==
+                            "FAILED"
+                        )
+                            console.log(
+                                "Transcription Job failed, reason is",
+                                data.TranscriptionJob.FailureReason
                             );
-                        }, 200);
-                    } else if (
-                        data.TranscriptionJob.TranscriptionJobStatus == "FAILED"
-                    )
-                        console.log(
-                            "Transcription Job failed, reason is",
-                            data.TranscriptionJob.FailureReason
-                        );
+                    }
                 }
-            }
-        );
-    }, 1000);
+            );
+        }, 2000);
+    } catch (err) {
+        console.log("Error in transcribe (route handler) is", err);
+    }
 });
 
 router.post("/translate_text", (req, res) => {
@@ -149,7 +161,7 @@ router.post("/synthesize_speech", (req, res) => {
     const text = req.body.text;
     let targetLanguage = req.body.targetLanguage;
 
-    let voice = "not working";
+    let voice;
 
     for (let property in voices) {
         if (property == targetLanguage) {
@@ -166,34 +178,31 @@ router.post("/synthesize_speech", (req, res) => {
         VoiceId: voice,
     };
 
-    Polly.synthesizeSpeech(input, async (err, data) => {
+    Polly.synthesizeSpeech(input, (err, data) => {
         try {
             if (err) {
                 console.log("Error in speech synthesis is", err);
             }
-            if (data.AudioStream instanceof Buffer) {
-                //Audio received from speech synthesis process is first saved on server
-                await fs.writeFileSync("sampleFileTwo.mp3", data.AudioStream);
-                
-                //Audio file saved on server is sent with response
-                let path1 = __dirname;
-                path1 = path1.split("\\");
-                path1.pop();
+            // if (data.AudioStream instanceof Buffer) {
+            //Audio received from speech synthesis process is first saved on server
+            fs.writeFileSync("sampleFileTwo.mp3", data.AudioStream);
 
-                const filename = "sampleFileTwo.mp3";
-                path1 = path.join(...path1);
+            //Audio file saved on server is sent with response
+            let path1 = __dirname;
+            path1 = path1.split("\\");
+            path1.pop();
 
-                const options = {
-                    root: path1,
-                };
-                await res.sendFile(filename, options, function (err) {
-                    if (err)
-                        console.log(
-                            "Error while sending file to frontend is",
-                            err
-                        );
-                });
-            }
+            const filename = "sampleFileTwo.mp3";
+            path1 = path.join(...path1);
+
+            const options = {
+                root: path1,
+            };
+            res.sendFile(filename, options, function (err) {
+                if (err)
+                    console.log("Error while sending file to frontend is", err);
+            });
+            // }
         } catch (err) {
             console.log("Error during speech synthesis is", err);
         }

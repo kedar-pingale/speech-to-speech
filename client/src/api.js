@@ -4,7 +4,9 @@ export const transcribe = audio => {
     return fetch("http://localhost:4001/transcribe", {
         method: "POST",
         body: formData,
-    }).then(res => res.json());
+    })
+        .then(res => res.json())
+        .catch(err => console.log("Error in api.js is", err));
 };
 
 export const translateText = (text, targetLanguage) =>
