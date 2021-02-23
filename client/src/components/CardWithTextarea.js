@@ -1,8 +1,8 @@
 import React from "react";
 import { useSelector, useDispatch } from "react-redux";
 
-import setMtInput from "./actions/setMtInput";
-import setTtsInput from "./actions/setTtsInput";
+import setMtInput from "../actions/setMtInput";
+import setTtsInput from "../actions/setTtsInput";
 
 export default function CardWithTextarea(props) {
     const dispatch = useDispatch();

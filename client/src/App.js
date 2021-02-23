@@ -3,7 +3,7 @@ import React from "react";
 import { useSelector, useDispatch } from "react-redux";
 
 import "../node_modules/bootstrap/dist/css/bootstrap.min.css";
-import CardWithTextarea from "./CardWithTextarea";
+import CardWithTextarea from "./components/CardWithTextarea";
 import setFile from "./actions/setFile";
 import setTargetLanguage from "./actions/setTargetLanguage";
 import setAudioOutput from "./actions/setAudioOutput";
